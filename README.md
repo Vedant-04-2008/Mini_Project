@@ -18,7 +18,7 @@
 
 - **Frontend**: React 18, Vite, React-Leaflet, OpenStreetMap, Zustand, WebSockets.
 - **Backend**: Python 3.11+, Flask, Flask-SocketIO, SQLAlchemy, GeoAlchemy2, PyJWT.
-- **Database**: MySQL 8.0+ with Spatial Extensions (or Docker Compose).
+- **Database**: MySQL 8.0+ with Spatial Extensions.
 
 ---
 
@@ -27,7 +27,7 @@
 ### 1. Prerequisites
 - Python 3.10+
 - Node.js 18+ & npm
-- MySQL 8.0+ (running locally or via Docker)
+- MySQL 8.0+ (running locally)
 
 ### 2. Backend Setup
 1. Open a terminal in the `backend/` directory:
@@ -93,7 +93,6 @@ Mini_project_sem_3/
 │   │   └── ReportPage.jsx  # Hazard & incident reporting
 │   ├── package.json
 │   └── vite.config.js
-├── docker-compose.yml      # Optional container orchestration
 └── README.md
 ```
 
