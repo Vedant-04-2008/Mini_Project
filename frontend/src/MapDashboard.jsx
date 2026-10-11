@@ -38,6 +38,8 @@ function MapDashboard() {
     const [endLoc, setEndLoc] = useState({ name: 'Rankala Lake', lat: 16.6915, lng: 74.2155 });
     const [isCalculating, setIsCalculating] = useState(false);
     const [error, setError] = useState(null);
+    const [showKMCModal, setShowKMCModal] = useState(false);
+    const [kmcTickets, setKmcTickets] = useState([]);
 
     // Ref for tracking GPS simulation interval
     const gpsIntervalRef = useRef(null);
@@ -253,6 +255,21 @@ function MapDashboard() {
                         {guardianActive ? 'Guardian Active' : 'Enable Guardian'}
                     </button>
 
+                    <button 
+                        onClick={() => {
+                            setShowKMCModal(true);
+                            api.getCivicTickets().then(data => setKmcTickets(data)).catch(console.error);
+                        }} 
+                        style={{ 
+                            backgroundColor: '#1e3a8a', border: '1px solid #3b82f6', color: '#93c5fd', 
+                            padding: '0.5rem 1rem', borderRadius: '6px', fontSize: '0.875rem', fontWeight: 600, 
+                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', transition: 'all 0.2s' 
+                        }}
+                        title="Kolhapur Municipal Corporation Civic Portal"
+                    >
+                        <span className="material-symbols-outlined" style={{ fontSize: '1.1rem' }}>account_balance</span> KMC Portal
+                    </button>
+
                     <button onClick={() => navigate('/report')} style={{ backgroundColor: '#0d9488', border: 'none', color: '#ffffff', padding: '0.5rem 1rem', borderRadius: '6px', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <span className="material-symbols-outlined" style={{ fontSize: '1.1rem' }}>add_location</span> Report
                     </button>
@@ -451,6 +468,86 @@ function MapDashboard() {
                     )}
                 </MapContainer>
             </div>
+
+            {/* KMC Civic Redressal Portal (Future Scope Demonstration Modal) */}
+            {showKMCModal && (
+                <div style={{
+                    position: 'fixed', inset: 0, backgroundColor: 'rgba(2, 6, 23, 0.85)', backdropFilter: 'blur(6px)',
+                    display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000, padding: '1.5rem'
+                }}>
+                    <div style={{
+                        backgroundColor: '#1e293b', border: '1px solid #3b82f6', borderRadius: '16px',
+                        maxWidth: '700px', width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8)', overflow: 'hidden'
+                    }}>
+                        {/* Header */}
+                        <div style={{ padding: '1.25rem 2rem', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#0f172a' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <div style={{ backgroundColor: '#2563eb', padding: '0.5rem', borderRadius: '10px', display: 'flex' }}>
+                                    <span className="material-symbols-outlined" style={{ color: '#fff', fontSize: '1.4rem' }}>account_balance</span>
+                                </div>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#f8fafc' }}>KMC Civic Grievance Portal</h3>
+                                    <p style={{ margin: 0, fontSize: '0.8rem', color: '#93c5fd' }}>Kolhapur Municipal Corporation • Infrastructure Maintenance Queue</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowKMCModal(false)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.6rem', lineHeight: 1 }}>&times;</button>
+                        </div>
+
+                        {/* Explanatory Academic Banner */}
+                        <div style={{ padding: '1rem 2rem', backgroundColor: 'rgba(37, 99, 235, 0.1)', borderBottom: '1px solid #334155', fontSize: '0.82rem', color: '#bfdbfe', lineHeight: 1.5 }}>
+                            <strong style={{ color: '#60a5fa' }}>🎓 Academic Project Future Scope:</strong><br/>
+                            This module bridges citizen safety reporting with municipal governance. In full production deployment, citizen-flagged broken streetlights, road craters, and drainage hazards are automatically dispatched via KMC e-Nagarpalika REST APIs to municipal repair crews to permanently fix high-risk corridors.
+                        </div>
+
+                        {/* Live Queue List */}
+                        <div style={{ padding: '1.5rem 2rem', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+                            <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '0.25rem' }}>
+                                Active Municipal Tickets ({kmcTickets.length})
+                            </div>
+
+                            {kmcTickets.length === 0 ? (
+                                <div style={{ textAlign: 'center', padding: '2.5rem', color: '#64748b', fontSize: '0.9rem' }}>
+                                    No civic complaints logged yet. Click "File New Grievance" below to simulate an incident!
+                                </div>
+                            ) : (
+                                kmcTickets.map(tkt => (
+                                    <div key={tkt.id} style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '10px', padding: '1rem 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '4px' }}>
+                                                <span style={{ color: '#38bdf8', fontWeight: 700, fontFamily: 'monospace', fontSize: '0.85rem' }}>{tkt.reference_number}</span>
+                                                <span style={{ backgroundColor: '#1e3a8a', color: '#93c5fd', fontSize: '0.72rem', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>{tkt.department}</span>
+                                            </div>
+                                            <div style={{ fontSize: '0.85rem', color: '#e2e8f0', fontWeight: 500 }}>
+                                                {tkt.issue_type.replace(/_/g, ' ').toUpperCase()}: {tkt.description}
+                                            </div>
+                                            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
+                                                Logged: {tkt.created_at}
+                                            </div>
+                                        </div>
+                                        <div style={{ textAlign: 'right' }}>
+                                            <span style={{ backgroundColor: 'rgba(52, 211, 153, 0.1)', color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.3)', fontSize: '0.75rem', padding: '4px 10px', borderRadius: '50px', fontWeight: 600 }}>
+                                                ● {tkt.status}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div style={{ padding: '1rem 2rem', borderTop: '1px solid #334155', backgroundColor: '#0f172a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.78rem', color: '#64748b' }}>Connected to SafeRoute Civic Redressal Engine</span>
+                            <button 
+                                onClick={() => { setShowKMCModal(false); navigate('/report'); }} 
+                                style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '0.6rem 1.25rem', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}
+                            >
+                                File New Grievance
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

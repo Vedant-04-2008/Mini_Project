@@ -27,12 +27,25 @@ function LocationSelector({ position, setPosition }) {
 
 function ReportPage() {
     const navigate = useNavigate();
+    
+    // Tab Mode: 'hazard' (Standard community hazard) or 'kmc' (Civic infrastructure complaint)
+    const [reportCategory, setReportCategory] = useState('hazard');
+    
+    // Community Hazard Fields
     const [hazardType, setHazardType] = useState('safe_area');
-    const [hazardDesc, setHazardDesc] = useState('');
     const [severityScore, setSeverityScore] = useState(0); 
+
+    // KMC Civic Issue Fields
+    const [kmcIssueType, setKmcIssueType] = useState('broken_streetlight');
+    
+    // Common Fields
+    const [description, setDescription] = useState('');
     const [position, setPosition] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState(null);
+
+    // KMC Success Receipt Modal State
+    const [kmcReceipt, setKmcReceipt] = useState(null);
 
     const handleStandardLocationChange = (e) => {
         const loc = STANDARD_LOCATIONS.find(l => l.name === e.target.value);
@@ -60,20 +73,34 @@ function ReportPage() {
         }
 
         setIsSubmitting(true);
-        const newHazard = { 
-            lat: position.lat, 
-            lng: position.lng, 
-            type: hazardType, 
-            description: hazardDesc,
-            severity_score: parseInt(severityScore, 10)
-        };
 
         try {
-            await api.reportHazard(newHazard);
-            // On success, redirect back to dashboard
-            navigate('/dashboard');
+            if (reportCategory === 'hazard') {
+                // Submit standard community safety hazard
+                const newHazard = { 
+                    lat: position.lat, 
+                    lng: position.lng, 
+                    type: hazardType, 
+                    description: description,
+                    severity_score: parseInt(severityScore, 10)
+                };
+                await api.reportHazard(newHazard);
+                navigate('/dashboard');
+            } else {
+                // Submit KMC Municipal Civic Grievance
+                const civicPayload = {
+                    lat: position.lat,
+                    lng: position.lng,
+                    issue_type: kmcIssueType,
+                    description: description
+                };
+                const response = await api.reportCivic(civicPayload);
+                // Open KMC Acknowledgement Slip
+                setKmcReceipt(response);
+                setIsSubmitting(false);
+            }
         } catch (err) {
-            setError(err.message || "Failed to submit the report.");
+            setError(err.message || "Failed to submit report.");
             setIsSubmitting(false);
         }
     };
@@ -81,17 +108,17 @@ function ReportPage() {
     return (
         <div style={{ 
             display: 'flex', flexDirection: 'column', minHeight: '100vh', 
-            backgroundColor: '#0f172a', // slate-900
+            backgroundColor: '#0f172a',
             color: '#f8fafc',
             fontFamily: 'Inter, system-ui, Avenir, Helvetica, Arial, sans-serif'
         }}>
             
             <nav style={{ 
-                padding: '1.25rem 3rem', backgroundColor: '#020617', // slate-950
-                borderBottom: '1px solid #1e293b', // slate-800
+                padding: '1.25rem 3rem', backgroundColor: '#020617', 
+                borderBottom: '1px solid #1e293b', 
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center' 
             }}>
-                <div style={{ fontSize: '1.25rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <div style={{ fontSize: '1.25rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }} onClick={() => navigate('/dashboard')}>
                     <div style={{ width: '20px', height: '20px', backgroundColor: '#0d9488', borderRadius: '4px' }}></div>
                     SafeRoute
                 </div>
@@ -103,31 +130,69 @@ function ReportPage() {
                         fontSize: '0.875rem', fontWeight: 600, transition: 'all 0.2s'
                     }}
                 >
-                    Cancel
+                    Back to Map
                 </button>
             </nav>
 
-            <div style={{ padding: '3rem 2rem', display: 'flex', justifyContent: 'center', flex: 1 }}>
-                <div style={{ display: 'flex', gap: '2rem', width: '100%', maxWidth: '1100px', flexWrap: 'wrap' }}>
+            <div style={{ padding: '2.5rem 2rem', display: 'flex', justifyContent: 'center', flex: 1 }}>
+                <div style={{ display: 'flex', gap: '2rem', width: '100%', maxWidth: '1150px', flexWrap: 'wrap' }}>
                     
                     {/* Form Section */}
                     <div style={{ 
-                        flex: '1 1 400px', 
-                        backgroundColor: '#1e293b', // slate-800
-                        border: '1px solid #334155', // slate-700
+                        flex: '1 1 450px', 
+                        backgroundColor: '#1e293b',
+                        border: '1px solid #334155',
                         borderRadius: '16px',
                         padding: '2.5rem', 
                         boxShadow: '0 10px 15px -3px rgba(2, 6, 23, 0.5)'
                     }}>
-                        <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: '0 0 1.5rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <span className="material-symbols-outlined" style={{ color: '#14b8a6' }}>rate_review</span> 
-                            Submit Report
-                        </h2>
+                        
+                        {/* Tab Switcher: Hazard vs KMC Complaint */}
+                        <div style={{ display: 'flex', backgroundColor: '#0f172a', borderRadius: '10px', padding: '4px', marginBottom: '1.75rem', border: '1px solid #334155' }}>
+                            <button
+                                type="button"
+                                onClick={() => setReportCategory('hazard')}
+                                style={{
+                                    flex: 1, padding: '0.65rem', border: 'none', borderRadius: '8px',
+                                    fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer',
+                                    backgroundColor: reportCategory === 'hazard' ? '#0d9488' : 'transparent',
+                                    color: reportCategory === 'hazard' ? '#ffffff' : '#94a3b8',
+                                    transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem'
+                                }}
+                            >
+                                <span className="material-symbols-outlined" style={{ fontSize: '1rem' }}>warning</span>
+                                Safety Hazard
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setReportCategory('kmc')}
+                                style={{
+                                    flex: 1, padding: '0.65rem', border: 'none', borderRadius: '8px',
+                                    fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer',
+                                    backgroundColor: reportCategory === 'kmc' ? '#2563eb' : 'transparent',
+                                    color: reportCategory === 'kmc' ? '#ffffff' : '#94a3b8',
+                                    transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem'
+                                }}
+                            >
+                                <span className="material-symbols-outlined" style={{ fontSize: '1rem' }}>account_balance</span>
+                                KMC Civic Grievance
+                            </button>
+                        </div>
+
+                        {reportCategory === 'kmc' && (
+                            <div style={{ backgroundColor: 'rgba(37, 99, 235, 0.1)', border: '1px solid #3b82f6', borderRadius: '10px', padding: '0.875rem 1rem', marginBottom: '1.5rem', fontSize: '0.8rem', color: '#93c5fd' }}>
+                                <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '3px', color: '#60a5fa' }}>
+                                    <span className="material-symbols-outlined" style={{ fontSize: '1rem' }}>info</span>
+                                    Future Scope Feature (Kolhapur Municipal Corporation)
+                                </div>
+                                Registered civic complaints are logged with coordinates and queued for automated dispatch to KMC ward engineering divisions.
+                            </div>
+                        )}
 
                         {error && (
                             <div style={{ 
-                                backgroundColor: '#fff1f2', // rose-50
-                                color: '#e11d48', // rose-600
+                                backgroundColor: '#fff1f2',
+                                color: '#e11d48',
                                 padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem', 
                                 fontSize: '0.875rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.5rem'
                             }}>
@@ -136,10 +201,10 @@ function ReportPage() {
                             </div>
                         )}
 
-                        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                             
                             <div>
-                                <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '0.5rem', display: 'block' }}>1. Location</label>
+                                <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '0.5rem', display: 'block' }}>1. Incident Location</label>
                                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                                     <button 
                                         type="button" 
@@ -147,8 +212,7 @@ function ReportPage() {
                                         style={{ 
                                             backgroundColor: '#334155', border: 'none', color: '#f8fafc', 
                                             padding: '0.75rem', borderRadius: '8px', flex: '0 0 auto', 
-                                            cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center',
-                                            transition: 'background-color 0.2s'
+                                            cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center'
                                         }}
                                         title="Use Current Location"
                                     >
@@ -167,60 +231,86 @@ function ReportPage() {
                                 </div>
                             </div>
 
-                            <div>
-                                <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '0.5rem', display: 'block' }}>2. Category</label>
-                                <select 
-                                    value={hazardType} 
-                                    onChange={e => setHazardType(e.target.value)} 
-                                    style={{ 
-                                        width: '100%', backgroundColor: '#0f172a', border: '1px solid #334155', 
-                                        color: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '8px', 
-                                        outline: 'none', marginBottom: '1.25rem', fontSize: '0.95rem' 
-                                    }}
-                                >
-                                    <optgroup label="Positive Feedback">
-                                        <option value="safe_area">Safe & Secure Area</option>
-                                        <option value="well_lit">Well-Lit Street</option>
-                                        <option value="police_presence">Active Patrol / Police Presence</option>
-                                    </optgroup>
-                                    <optgroup label="Hazards / Warnings">
-                                        <option value="poor_lighting">Poor Lighting / Dark Area</option>
-                                        <option value="suspicious_activity">Suspicious Activity</option>
-                                        <option value="harassment">Harassment Reported</option>
-                                        <option value="no_sidewalk">No Sidewalk / Bad Road</option>
-                                    </optgroup>
-                                    <optgroup label="KMC Civic Issues (Future)">
-                                        <option value="broken_streetlight" disabled>Broken Streetlight (Coming Soon)</option>
-                                        <option value="flooded_road" disabled>Flooded Road (Coming Soon)</option>
-                                        <option value="pothole" disabled>Severe Pothole (Coming Soon)</option>
-                                    </optgroup>
-                                </select>
+                            {/* Mode A: Standard Safety Hazard */}
+                            {reportCategory === 'hazard' ? (
+                                <>
+                                    <div>
+                                        <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '0.5rem', display: 'block' }}>2. Category</label>
+                                        <select 
+                                            value={hazardType} 
+                                            onChange={e => setHazardType(e.target.value)} 
+                                            style={{ 
+                                                width: '100%', backgroundColor: '#0f172a', border: '1px solid #334155', 
+                                                color: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '8px', 
+                                                outline: 'none', fontSize: '0.95rem' 
+                                            }}
+                                        >
+                                            <optgroup label="Positive Landmarks">
+                                                <option value="safe_area">Safe & Secure Zone</option>
+                                                <option value="well_lit">Well-Lit Street</option>
+                                                <option value="police_presence">Police Patrol / Outpost</option>
+                                                <option value="Green Park">Green Park</option>
+                                                <option value="Heritage Spot">Heritage Spot</option>
+                                            </optgroup>
+                                            <optgroup label="Safety Concerns">
+                                                <option value="poor_lighting">Dark / Unlit Alley</option>
+                                                <option value="suspicious_activity">Suspicious Gathering</option>
+                                                <option value="harassment">Harassment Hotspot</option>
+                                                <option value="no_sidewalk">Isolated / Deserted Stretch</option>
+                                            </optgroup>
+                                        </select>
+                                    </div>
 
-                                <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '0.5rem', display: 'block' }}>3. Severity Level</label>
-                                <select 
-                                    value={severityScore} 
-                                    onChange={e => setSeverityScore(e.target.value)} 
-                                    style={{ 
-                                        width: '100%', backgroundColor: '#0f172a', border: '1px solid #334155', 
-                                        color: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '8px', 
-                                        outline: 'none', fontSize: '0.95rem' 
-                                    }}
-                                >
-                                    <option value={0}>Positive / Safe (Teal)</option>
-                                    <option value={1}>Low - Minor Caution (Green)</option>
-                                    <option value={2}>Medium - Hazardous (Yellow)</option>
-                                    <option value={3}>High - Avoid Area (Red)</option>
-                                </select>
-                            </div>
+                                    <div>
+                                        <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '0.5rem', display: 'block' }}>3. Severity / Rating Level</label>
+                                        <select 
+                                            value={severityScore} 
+                                            onChange={e => setSeverityScore(e.target.value)} 
+                                            style={{ 
+                                                width: '100%', backgroundColor: '#0f172a', border: '1px solid #334155', 
+                                                color: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '8px', 
+                                                outline: 'none', fontSize: '0.95rem' 
+                                            }}
+                                        >
+                                            <option value={0}>Positive / High Safety (Teal)</option>
+                                            <option value={1}>Low - Minor Caution (Lime)</option>
+                                            <option value={2}>Medium - Hazardous (Amber)</option>
+                                            <option value={3}>High - Avoid Area (Red)</option>
+                                        </select>
+                                    </div>
+                                </>
+                            ) : (
+                                /* Mode B: KMC Municipal Grievance */
+                                <div>
+                                    <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '0.5rem', display: 'block' }}>2. KMC Civic Issue Category</label>
+                                    <select 
+                                        value={kmcIssueType} 
+                                        onChange={e => setKmcIssueType(e.target.value)} 
+                                        style={{ 
+                                            width: '100%', backgroundColor: '#0f172a', border: '1px solid #334155', 
+                                            color: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '8px', 
+                                            outline: 'none', fontSize: '0.95rem' 
+                                        }}
+                                    >
+                                        <option value="broken_streetlight">Broken / Non-functional Streetlight (Electrical Dept)</option>
+                                        <option value="pothole">Dangerous Pothole / Crater (Roads Dept)</option>
+                                        <option value="flooded_road">Drain Overflow / Waterlogging (Drainage Dept)</option>
+                                        <option value="open_manhole">Uncovered / Broken Manhole (Sanitation Dept)</option>
+                                        <option value="damaged_sidewalk">Damaged Footpath / Missing Curb (Town Planning)</option>
+                                    </select>
+                                </div>
+                            )}
 
                             <div>
-                                <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '0.5rem', display: 'block' }}>4. Additional Details</label>
+                                <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '0.5rem', display: 'block' }}>
+                                    {reportCategory === 'hazard' ? '4. Description' : '3. Grievance Details for KMC'}
+                                </label>
                                 <textarea 
-                                    placeholder="Provide more context..." 
-                                    value={hazardDesc} 
-                                    onChange={e => setHazardDesc(e.target.value)} 
+                                    placeholder={reportCategory === 'hazard' ? "Describe the safety condition..." : "Provide specific landmarks or damage details for municipal repair team..."}
+                                    value={description} 
+                                    onChange={e => setDescription(e.target.value)} 
                                     required 
-                                    rows={4} 
+                                    rows={3} 
                                     style={{ 
                                         width: '100%', backgroundColor: '#0f172a', border: '1px solid #334155', 
                                         color: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '8px', 
@@ -233,23 +323,32 @@ function ReportPage() {
                                 type="submit" 
                                 disabled={isSubmitting} 
                                 style={{ 
-                                    backgroundColor: '#0d9488', color: '#ffffff', border: 'none', 
-                                    padding: '1rem', borderRadius: '8px', fontSize: '1rem', 
+                                    backgroundColor: reportCategory === 'kmc' ? '#2563eb' : '#0d9488', 
+                                    color: '#ffffff', border: 'none', 
+                                    padding: '0.875rem', borderRadius: '8px', fontSize: '1rem', 
                                     fontWeight: 600, cursor: 'pointer', marginTop: '0.5rem', 
-                                    boxShadow: '0 4px 6px -1px rgba(13, 148, 136, 0.2)',
-                                    transition: 'background-color 0.2s', opacity: isSubmitting ? 0.7 : 1
+                                    boxShadow: reportCategory === 'kmc' ? '0 4px 6px -1px rgba(37, 99, 235, 0.3)' : '0 4px 6px -1px rgba(13, 148, 136, 0.2)',
+                                    transition: 'all 0.2s', opacity: isSubmitting ? 0.7 : 1,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem'
                                 }}
                             >
-                                {isSubmitting ? 'Submitting...' : 'Submit Report'}
+                                <span className="material-symbols-outlined" style={{ fontSize: '1.2rem' }}>
+                                    {reportCategory === 'kmc' ? 'send' : 'add_location'}
+                                </span>
+                                {isSubmitting ? 'Registering...' : (reportCategory === 'kmc' ? 'Submit KMC Grievance' : 'Submit Safety Report')}
                             </button>
                         </form>
                     </div>
 
+                    {/* Interactive Map Picker */}
                     <div style={{ 
                         flex: '1 1 500px', border: '1px solid #334155', borderRadius: '16px', 
                         overflow: 'hidden', minHeight: '400px', position: 'relative', 
                         boxShadow: '0 10px 15px -3px rgba(2, 6, 23, 0.5)' 
                     }}>
+                        <div style={{ position: 'absolute', top: '15px', left: '15px', zIndex: 1000, backgroundColor: 'rgba(15, 23, 42, 0.9)', padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid #334155', fontSize: '0.8rem', color: '#cbd5e1' }}>
+                            📍 Click on the map to place the incident pin
+                        </div>
                         <MapContainer center={[16.7050, 74.2433]} zoom={13} style={{ height: '100%', width: '100%', cursor: 'crosshair' }} zoomControl={false}>
                             <TileLayer 
                                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" 
@@ -260,6 +359,74 @@ function ReportPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Official KMC Grievance Receipt Modal */}
+            {kmcReceipt && (
+                <div style={{
+                    position: 'fixed', inset: 0, backgroundColor: 'rgba(2, 6, 23, 0.85)', backdropFilter: 'blur(6px)',
+                    display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000, padding: '1rem'
+                }}>
+                    <div style={{
+                        backgroundColor: '#1e293b', border: '1px solid #3b82f6', borderRadius: '16px',
+                        maxWidth: '520px', width: '100%', padding: '2rem', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                            <div style={{ backgroundColor: '#2563eb', padding: '0.6rem', borderRadius: '12px', display: 'flex' }}>
+                                <span className="material-symbols-outlined" style={{ color: '#fff', fontSize: '1.5rem' }}>verified</span>
+                            </div>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#f8fafc' }}>Grievance Registered</h3>
+                                <p style={{ margin: 0, fontSize: '0.85rem', color: '#93c5fd' }}>Kolhapur Municipal Corporation (KMC)</p>
+                            </div>
+                        </div>
+
+                        <div style={{ backgroundColor: '#0f172a', borderRadius: '10px', padding: '1.25rem', border: '1px solid #334155', marginBottom: '1.25rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                                <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Ticket Reference:</span>
+                                <span style={{ color: '#38bdf8', fontWeight: 700, fontFamily: 'monospace', fontSize: '0.95rem' }}>{kmcReceipt.reference_number}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                                <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Routing Division:</span>
+                                <span style={{ color: '#f8fafc', fontWeight: 600, fontSize: '0.85rem', textAlign: 'right' }}>{kmcReceipt.department}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                                <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Dispatch Status:</span>
+                                <span style={{ color: '#34d399', fontWeight: 600, fontSize: '0.85rem' }}>● {kmcReceipt.status}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Est. SLA:</span>
+                                <span style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>{kmcReceipt.estimated_resolution}</span>
+                            </div>
+                        </div>
+
+                        <div style={{ backgroundColor: 'rgba(59, 130, 246, 0.1)', border: '1px dashed #3b82f6', borderRadius: '8px', padding: '0.75rem', marginBottom: '1.5rem', fontSize: '0.78rem', color: '#93c5fd' }}>
+                            <strong>🎓 Academic Future Scope Note:</strong><br/>
+                            In production deployment, this ticket is dispatched to KMC's Municipal Field Team API to dispatch electrical & road maintenance crews to illuminate and repair high-risk corridors.
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.75rem' }}>
+                            <button
+                                onClick={() => navigate('/dashboard')}
+                                style={{
+                                    flex: 1, backgroundColor: '#2563eb', color: '#fff', border: 'none',
+                                    padding: '0.75rem', borderRadius: '8px', fontWeight: 600, cursor: 'pointer'
+                                }}
+                            >
+                                Back to Map
+                            </button>
+                            <button
+                                onClick={() => { setKmcReceipt(null); setDescription(''); setPosition(null); }}
+                                style={{
+                                    flex: 1, backgroundColor: '#334155', color: '#cbd5e1', border: 'none',
+                                    padding: '0.75rem', borderRadius: '8px', fontWeight: 600, cursor: 'pointer'
+                                }}
+                            >
+                                File Another
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

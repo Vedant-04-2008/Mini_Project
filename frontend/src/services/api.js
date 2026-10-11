@@ -85,6 +85,22 @@ export const api = {
             headers: getHeaders()
         });
         return handleResponse(res);
+    },
+
+    reportCivic: async (civicData) => {
+        const res = await fetch('/api/civic/report', {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(civicData)
+        });
+        return handleResponse(res);
+    },
+
+    getCivicTickets: async () => {
+        const res = await fetch('/api/civic/tickets', {
+            headers: getHeaders()
+        });
+        return handleResponse(res);
     }
 };
 
