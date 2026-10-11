@@ -1,0 +1,13 @@
+Flask==3.0.0
+Flask-SQLAlchemy==3.1.1
+Flask-CORS==4.0.0
+PyMySQL==1.1.0
+cryptography>=41.0.0
+GeoAlchemy2==0.14.3
+alembic==1.13.0
+redis==5.0.1
+Flask-SocketIO==5.3.6
+python-dotenv==1.0.0
+requests==2.31.0
+polyline==2.0.0
+PyJWT==2.8.0
