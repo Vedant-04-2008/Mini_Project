@@ -72,9 +72,14 @@ def get_optimal_routes(start_lat, start_lng, end_lat, end_lng):
         wkt_coords = ", ".join([f"{lon} {lat}" for lat, lon in coords])
         linestring_wkt = f"LINESTRING({wkt_coords})"
         
+        POSITIVE_TYPES = {
+            'well_lit', 'safe_area', 'heritage spot', 'green park', 
+            'well-maintained road', 'clean zone', 'safe zone', 'smooth traffic', 'police_presence'
+        }
+
         # Spatial Database Query (SRID 4326)
         query = text("""
-            SELECT severity_score 
+            SELECT hazard_type, severity_score 
             FROM spatial_hazards 
             WHERE ST_Distance(location, ST_GeomFromText(:ls, 4326)) < 50
         """)
@@ -85,16 +90,25 @@ def get_optimal_routes(start_lat, start_lng, end_lat, end_lng):
             print(f"[SPATIAL QUERY WARNING] {db_err}")
             hazards = []
         
-        # Calculate penalty for hazards near route
+        # Calculate penalty only for actual hazards; positive spots provide safety bonuses
         penalty_seconds = 0
+        actual_hazards_count = 0
+        
         for h in hazards:
-            score = float(h[0]) if h[0] is not None else 1.0
-            if score <= 1.0:
-                penalty_seconds += 60   # Minor caution -> +1 min penalty
-            elif score <= 2.0:
-                penalty_seconds += 180  # Moderate caution -> +3 min penalty
+            htype = (h[0] or '').strip().lower()
+            score = float(h[1]) if h[1] is not None else 1.0
+            
+            if htype in POSITIVE_TYPES:
+                # Safe zone bonus: reduce penalty
+                penalty_seconds = max(0, penalty_seconds - 30)
             else:
-                penalty_seconds += 300  # High danger -> +5 min penalty
+                actual_hazards_count += 1
+                if score <= 1.8:
+                    penalty_seconds += 60   # Minor caution -> +1 min penalty
+                elif score <= 3.2:
+                    penalty_seconds += 180  # Moderate caution -> +3 min penalty
+                else:
+                    penalty_seconds += 300  # High danger -> +5 min penalty
                 
         total_cost = duration + penalty_seconds
         
@@ -110,7 +124,7 @@ def get_optimal_routes(start_lat, start_lng, end_lat, end_lng):
             "distance_m": distance,
             "penalty_sec": penalty_seconds,
             "total_cost": total_cost,
-            "hazards_encountered": len(hazards),
+            "hazards_encountered": actual_hazards_count,
             "time": f"{mins} mins",
             "distance_str": f"{dist_km} km"
         }

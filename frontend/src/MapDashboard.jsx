@@ -160,11 +160,63 @@ function MapDashboard() {
         return endLoc.lat ? <CircleMarker center={[endLoc.lat, endLoc.lng]} radius={6} pathOptions={{ color: '#0d9488', fillColor: '#0d9488', fillOpacity: 1 }} /> : null;
     };
 
-    const getSeverityColor = (score) => {
-        if (score === 0) return '#14b8a6'; // teal-500
-        if (score === 1) return '#22c55e'; // green-500
-        if (score === 2) return '#f59e0b'; // amber-500
-        return '#f43f5e'; // rose-500
+    const POSITIVE_TYPES = new Set([
+        'well_lit', 'safe_area', 'heritage spot', 'green park', 
+        'well-maintained road', 'clean zone', 'safe zone', 'smooth traffic', 'police_presence'
+    ]);
+
+    const MODERATE_TYPES = new Set([
+        'poor_lighting', 'crowded zone', 'needs minor repair', 
+        'average road', 'moderate traffic', 'busy market', 'no_sidewalk'
+    ]);
+
+    const getSpotDetails = (hazard) => {
+        const rawType = (hazard.type || '').trim().toLowerCase();
+        const score = parseFloat(hazard.severity_score) || 0;
+        
+        // 1. Positive spots with good ratings (Teal / Emerald)
+        if (POSITIVE_TYPES.has(rawType)) {
+            return {
+                color: '#14b8a6', // teal-500
+                category: 'Positive / Safe Area',
+                ratingText: `Rating: ${score.toFixed(1)}/5`,
+                isPositive: true
+            };
+        }
+        
+        // 2. Moderate caution / busy areas (Amber / Orange)
+        if (MODERATE_TYPES.has(rawType)) {
+            return {
+                color: '#f59e0b', // amber-500
+                category: 'Caution / Busy Zone',
+                ratingText: `Level: ${score.toFixed(1)}`,
+                isPositive: false
+            };
+        }
+        
+        // 3. Hazards / Dangers scaled by severity score
+        if (score <= 1.8) {
+            return {
+                color: '#84cc16', // lime-500 (Minor caution)
+                category: 'Low Severity Hazard',
+                ratingText: `Severity: ${score.toFixed(1)}/5`,
+                isPositive: false
+            };
+        } else if (score <= 3.2) {
+            return {
+                color: '#f97316', // orange-500 (Moderate hazard)
+                category: 'Moderate Hazard',
+                ratingText: `Severity: ${score.toFixed(1)}/5`,
+                isPositive: false
+            };
+        } else {
+            return {
+                color: '#f43f5e', // rose-500 (High hazard)
+                category: 'High Hazard / Danger',
+                ratingText: `Severity: ${score.toFixed(1)}/5`,
+                isPositive: false
+            };
+        }
     };
 
     return (
@@ -336,17 +388,27 @@ function MapDashboard() {
                     )}
 
                     {hazards.map(hazard => {
-                        const score = hazard.severity_score !== undefined && hazard.severity_score !== null ? hazard.severity_score : 3;
-                        const markerColor = getSeverityColor(score);
+                        const spot = getSpotDetails(hazard);
                         return (
                             <CircleMarker 
                                 key={hazard.id} center={[hazard.lat, hazard.lng]} radius={8}
-                                pathOptions={{ color: markerColor, fillColor: markerColor, fillOpacity: 0.9, weight: 2 }}
+                                pathOptions={{ color: spot.color, fillColor: spot.color, fillOpacity: 0.85, weight: 2 }}
                             >
                                 <Popup>
-                                    <strong style={{color: markerColor}}>{hazard.type.replace(/_/g, ' ').toUpperCase()}</strong><br/>
-                                    Severity Score: {score}<br/>
-                                    {hazard.description}
+                                    <div style={{ color: '#0f172a', padding: '2px', minWidth: '150px' }}>
+                                        <div style={{ fontWeight: 700, color: spot.color, fontSize: '0.95rem', marginBottom: '2px' }}>
+                                            {spot.isPositive ? '🛡️ ' : '⚠️ '}
+                                            {hazard.type.replace(/_/g, ' ').toUpperCase()}
+                                        </div>
+                                        <div style={{ fontSize: '0.78rem', color: '#475569', fontWeight: 600, marginBottom: '4px' }}>
+                                            {spot.category} • {spot.ratingText}
+                                        </div>
+                                        {hazard.description && (
+                                            <div style={{ fontSize: '0.82rem', color: '#334155', borderTop: '1px solid #e2e8f0', paddingTop: '4px' }}>
+                                                {hazard.description}
+                                            </div>
+                                        )}
+                                    </div>
                                 </Popup>
                             </CircleMarker>
                         );
