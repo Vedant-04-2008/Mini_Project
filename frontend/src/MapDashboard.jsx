@@ -352,16 +352,39 @@ function MapDashboard() {
                         );
                     })}
 
-                    {routes && activeRoute === 'safest_route' && (
+                    {routes && (
                         <>
-                            <Polyline positions={routes.safest_route.path} color="#14b8a6" weight={5} opacity={0.9} />
-                            <MapBounds path={routes.safest_route.path} />
-                        </>
-                    )}
-                    {routes && activeRoute === 'fastest_route' && (
-                        <>
-                            <Polyline positions={routes.fastest_route.path} color="#8b5cf6" weight={5} opacity={0.9} />
-                            <MapBounds path={routes.fastest_route.path} />
+                            {/* Inactive Alternative Route (Muted dashed line, clickable to switch) */}
+                            {activeRoute === 'safest_route' && routes.fastest_route && (
+                                <Polyline 
+                                    positions={routes.fastest_route.path} 
+                                    color="#94a3b8" 
+                                    weight={4} 
+                                    opacity={0.55}
+                                    dashArray="6, 8"
+                                    eventHandlers={{ click: () => setActiveRoute('fastest_route') }}
+                                />
+                            )}
+                            {activeRoute === 'fastest_route' && routes.safest_route && (
+                                <Polyline 
+                                    positions={routes.safest_route.path} 
+                                    color="#94a3b8" 
+                                    weight={4} 
+                                    opacity={0.55}
+                                    dashArray="6, 8"
+                                    eventHandlers={{ click: () => setActiveRoute('safest_route') }}
+                                />
+                            )}
+
+                            {/* Active Selected Route (Vibrant Bold Line) */}
+                            {activeRoute === 'safest_route' && (
+                                <Polyline positions={routes.safest_route.path} color="#14b8a6" weight={6} opacity={0.95} />
+                            )}
+                            {activeRoute === 'fastest_route' && (
+                                <Polyline positions={routes.fastest_route.path} color="#8b5cf6" weight={6} opacity={0.95} />
+                            )}
+                            
+                            <MapBounds path={activeRoute === 'safest_route' ? routes.safest_route.path : routes.fastest_route.path} />
                         </>
                     )}
                 </MapContainer>

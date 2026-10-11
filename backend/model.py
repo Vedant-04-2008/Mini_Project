@@ -18,8 +18,6 @@ class Hazard(db.Model):
     description = db.Column(db.Text, nullable=True)
     severity_score = db.Column(db.Float, default=1.0)
     
-    # Core Spatial Column (SRID 4326 for standard unprojected GPS coordinates)
-    # spatial_index=True automatically builds an R-Tree index for lightning fast bounding box / radius queries
     location = db.Column(Geometry(geometry_type='POINT', srid=4326, spatial_index=True), nullable=False)
     
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
