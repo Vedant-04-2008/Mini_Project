@@ -40,6 +40,7 @@ function MapDashboard() {
     const [error, setError] = useState(null);
     const [showKMCModal, setShowKMCModal] = useState(false);
     const [kmcTickets, setKmcTickets] = useState([]);
+    const [emergencyContacts, setEmergencyContacts] = useState([]);
 
     // Ref for tracking GPS simulation interval
     const gpsIntervalRef = useRef(null);
@@ -58,6 +59,15 @@ function MapDashboard() {
                 console.error("Error fetching hazards:", err);
                 if (!isOffline) setError("Failed to load live map data.");
             });
+
+        // Fetch emergency contacts for Guardian mode
+        api.getProfile()
+            .then(data => {
+                if (data && data.emergency_contacts) {
+                    setEmergencyContacts(data.emergency_contacts);
+                }
+            })
+            .catch(err => console.log("Profile not loaded:", err));
 
         return () => {
             window.removeEventListener('online', handleOnline);
@@ -132,9 +142,12 @@ function MapDashboard() {
     const handleSOS = () => {
         if (guardianActive) {
             socket.emit('trigger_sos', { session_id: 'current_session' });
-            alert("CRITICAL SOS BROADCASTED TO EMERGENCY CONTACTS!");
+            const contactsSummary = emergencyContacts.length > 0 
+                ? emergencyContacts.map(c => `• ${c.name} (${c.phone}) - ${c.relationship}`).join('\n')
+                : '• Kolhapur Police Control Room (112)';
+            alert(`🚨 CRITICAL SOS BROADCASTED!\n\nYour live coordinates & emergency distress telemetry have been dispatched to:\n${contactsSummary}`);
         } else {
-            alert("Please activate Guardian Mode to broadcast SOS.");
+            alert("Please activate Guardian Mode before broadcasting SOS.");
         }
     };
 
@@ -274,6 +287,18 @@ function MapDashboard() {
                         <span className="material-symbols-outlined" style={{ fontSize: '1.1rem' }}>add_location</span> Report
                     </button>
 
+                    <button 
+                        onClick={() => navigate('/profile')} 
+                        style={{ 
+                            backgroundColor: '#1e293b', border: '1px solid #334155', color: '#cbd5e1', 
+                            padding: '0.5rem 1rem', borderRadius: '6px', fontSize: '0.875rem', fontWeight: 600, 
+                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', transition: 'all 0.2s' 
+                        }}
+                        title="My Profile & Emergency Contacts"
+                    >
+                        <span className="material-symbols-outlined" style={{ fontSize: '1.1rem' }}>account_circle</span> Profile
+                    </button>
+
                     <button onClick={handleLogout} style={{ backgroundColor: 'transparent', border: '1px solid #334155', color: '#cbd5e1', padding: '0.5rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                         <span className="material-symbols-outlined" style={{ fontSize: '1.1rem' }}>logout</span>
                     </button>
@@ -298,7 +323,16 @@ function MapDashboard() {
                                 <span className="material-symbols-outlined" style={{ animation: 'pulse 2s infinite' }}>my_location</span>
                                 LIVE TELEMETRY BROADCASTING
                             </div>
-                            <p style={{ color: '#be123c', fontSize: '0.8rem', margin: '0 0 1rem 0' }}>Your location is being streamed to trusted contacts.</p>
+                            <p style={{ color: '#be123c', fontSize: '0.8rem', margin: '0 0 0.5rem 0' }}>
+                                Your encrypted GPS coordinates are being streamed.
+                            </p>
+                            <div style={{ backgroundColor: '#ffe4e6', borderRadius: '8px', padding: '0.5rem', marginBottom: '1rem', fontSize: '0.75rem', color: '#9f1239' }}>
+                                {emergencyContacts.length > 0 ? (
+                                    <span>Broadcasting to <strong>{emergencyContacts.length} trusted contact(s)</strong></span>
+                                ) : (
+                                    <span>⚠️ No emergency contacts saved. <span onClick={() => navigate('/profile')} style={{ textDecoration: 'underline', cursor: 'pointer', fontWeight: 700 }}>Add in Profile</span></span>
+                                )}
+                            </div>
                             <button onClick={handleSOS} style={{ width: '100%', backgroundColor: '#e11d48', color: '#fff', border: 'none', padding: '0.75rem', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', boxShadow: '0 4px 6px rgba(225, 29, 72, 0.3)' }}>
                                 <span className="material-symbols-outlined">warning</span> SOS PANIC BUTTON
                             </button>

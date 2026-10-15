@@ -101,6 +101,39 @@ export const api = {
             headers: getHeaders()
         });
         return handleResponse(res);
+    },
+
+    getProfile: async () => {
+        const res = await fetch('/api/user/profile', {
+            headers: getHeaders()
+        });
+        return handleResponse(res);
+    },
+
+    updateProfile: async (data) => {
+        const res = await fetch('/api/user/profile', {
+            method: 'PUT',
+            headers: getHeaders(),
+            body: JSON.stringify(data)
+        });
+        return handleResponse(res);
+    },
+
+    addEmergencyContact: async (contact) => {
+        const res = await fetch('/api/user/emergency-contacts', {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(contact)
+        });
+        return handleResponse(res);
+    },
+
+    deleteEmergencyContact: async (contactId) => {
+        const res = await fetch(`/api/user/emergency-contacts/${contactId}`, {
+            method: 'DELETE',
+            headers: getHeaders()
+        });
+        return handleResponse(res);
     }
 };
 
