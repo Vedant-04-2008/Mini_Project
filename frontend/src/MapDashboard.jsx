@@ -459,40 +459,89 @@ function MapDashboard() {
                     <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#94a3b8', marginBottom: '1rem' }}>Suggested Routes</div>
 
                     {routes && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                            {/* Route Convergence Status Banner */}
+                            {routes.is_same_route ? (
+                                <div style={{
+                                    padding: '0.65rem 0.85rem', backgroundColor: 'rgba(20, 184, 166, 0.12)',
+                                    border: '1px solid rgba(20, 184, 166, 0.35)', borderRadius: '8px',
+                                    fontSize: '0.8rem', color: '#5eead4', display: 'flex', alignItems: 'center', gap: '0.4rem'
+                                }}>
+                                    <span className="material-symbols-outlined" style={{ fontSize: '1.1rem', color: '#2dd4bf' }}>verified</span>
+                                    <span><strong>Optimal Route:</strong> Direct path is safe ({routes.safest_route.hazard_count} hazards detected).</span>
+                                </div>
+                            ) : (
+                                <div style={{
+                                    padding: '0.65rem 0.85rem', backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                                    border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: '8px',
+                                    fontSize: '0.8rem', color: '#7dd3fc', display: 'flex', alignItems: 'center', gap: '0.4rem'
+                                }}>
+                                    <span className="material-symbols-outlined" style={{ fontSize: '1.1rem', color: '#38bdf8' }}>alt_route</span>
+                                    <span><strong>2 Corridors Compared:</strong> Click route card to inspect detour.</span>
+                                </div>
+                            )}
+
+                            {/* Safest Route Card */}
                             <div 
                                 onClick={() => setActiveRoute('safest_route')}
                                 style={{ 
-                                    padding: '1.25rem', border: `1px solid ${activeRoute === 'safest_route' ? '#14b8a6' : '#334155'}`, 
+                                    padding: '1.15rem', border: `1px solid ${activeRoute === 'safest_route' ? '#14b8a6' : '#334155'}`, 
                                     backgroundColor: activeRoute === 'safest_route' ? 'rgba(20, 184, 166, 0.1)' : '#1e293b', 
                                     cursor: 'pointer', borderRadius: '12px', transition: 'all 0.2s'
                                 }}
                             >
                                 <h4 style={{ margin: '0 0 0.5rem 0', color: activeRoute === 'safest_route' ? '#14b8a6' : '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <span className="material-symbols-outlined" style={{ fontSize: '1.2rem' }}>shield</span> Safest Route
+                                    <span className="material-symbols-outlined" style={{ fontSize: '1.2rem' }}>shield</span> 
+                                    <span>Safest Route</span>
+                                    {routes.is_same_route ? (
+                                        <span style={{ fontSize: '0.68rem', backgroundColor: '#0d9488', color: '#fff', padding: '2px 7px', borderRadius: '4px', fontWeight: 700, marginLeft: 'auto' }}>
+                                            OPTIMAL
+                                        </span>
+                                    ) : (
+                                        <span style={{ fontSize: '0.68rem', backgroundColor: 'rgba(20, 184, 166, 0.2)', color: '#2dd4bf', border: '1px solid #14b8a6', padding: '2px 7px', borderRadius: '4px', fontWeight: 700, marginLeft: 'auto' }}>
+                                            RECOMMENDED DETOUR
+                                        </span>
+                                    )}
                                 </h4>
-                                <p style={{ margin: '0 0 1rem 0', fontSize: '0.875rem', color: '#cbd5e1', lineHeight: 1.4 }}>{routes.safest_route.description}</p>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: '#94a3b8', fontWeight: 500 }}>
-                                    <span>{routes.safest_route.time}</span>
-                                    <span>{routes.safest_route.distance}</span>
+                                <p style={{ margin: '0 0 0.85rem 0', fontSize: '0.85rem', color: '#cbd5e1', lineHeight: 1.4 }}>{routes.safest_route.description}</p>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#94a3b8', fontWeight: 500 }}>
+                                    <span style={{ color: '#2dd4bf', fontWeight: 600 }}>⏱️ {routes.safest_route.time}</span>
+                                    <span>📍 {routes.safest_route.distance}</span>
+                                    <span style={{ color: routes.safest_route.hazard_count === 0 ? '#10b981' : '#f59e0b' }}>
+                                        {routes.safest_route.hazard_count === 0 ? '✓ 0 Hazards' : `⚠️ ${routes.safest_route.hazard_count} Hazard(s)`}
+                                    </span>
                                 </div>
                             </div>
 
+                            {/* Fastest Route Card */}
                             <div 
                                 onClick={() => setActiveRoute('fastest_route')}
                                 style={{ 
-                                    padding: '1.25rem', border: `1px solid ${activeRoute === 'fastest_route' ? '#8b5cf6' : '#334155'}`, 
+                                    padding: '1.15rem', border: `1px solid ${activeRoute === 'fastest_route' ? '#8b5cf6' : '#334155'}`, 
                                     backgroundColor: activeRoute === 'fastest_route' ? 'rgba(139, 92, 246, 0.1)' : '#1e293b', 
                                     cursor: 'pointer', borderRadius: '12px', transition: 'all 0.2s'
                                 }}
                             >
                                 <h4 style={{ margin: '0 0 0.5rem 0', color: activeRoute === 'fastest_route' ? '#a78bfa' : '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <span className="material-symbols-outlined" style={{ fontSize: '1.2rem' }}>bolt</span> Fastest Route
+                                    <span className="material-symbols-outlined" style={{ fontSize: '1.2rem' }}>bolt</span> 
+                                    <span>Fastest Route</span>
+                                    {routes.is_same_route ? (
+                                        <span style={{ fontSize: '0.68rem', backgroundColor: '#334155', color: '#cbd5e1', padding: '2px 7px', borderRadius: '4px', fontWeight: 700, marginLeft: 'auto' }}>
+                                            DIRECT
+                                        </span>
+                                    ) : (
+                                        <span style={{ fontSize: '0.68rem', backgroundColor: 'rgba(139, 92, 246, 0.2)', color: '#c084fc', border: '1px solid #8b5cf6', padding: '2px 7px', borderRadius: '4px', fontWeight: 700, marginLeft: 'auto' }}>
+                                            DIRECT ({routes.fastest_route.hazard_count} HAZARDS)
+                                        </span>
+                                    )}
                                 </h4>
-                                <p style={{ margin: '0 0 1rem 0', fontSize: '0.875rem', color: '#cbd5e1', lineHeight: 1.4 }}>{routes.fastest_route.description}</p>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: '#94a3b8', fontWeight: 500 }}>
-                                    <span>{routes.fastest_route.time}</span>
-                                    <span>{routes.fastest_route.distance}</span>
+                                <p style={{ margin: '0 0 0.85rem 0', fontSize: '0.85rem', color: '#cbd5e1', lineHeight: 1.4 }}>{routes.fastest_route.description}</p>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#94a3b8', fontWeight: 500 }}>
+                                    <span style={{ color: '#a78bfa', fontWeight: 600 }}>⏱️ {routes.fastest_route.time}</span>
+                                    <span>📍 {routes.fastest_route.distance}</span>
+                                    <span style={{ color: routes.fastest_route.hazard_count === 0 ? '#10b981' : '#f43f5e' }}>
+                                        {routes.fastest_route.hazard_count === 0 ? '✓ 0 Hazards' : `⚠️ ${routes.fastest_route.hazard_count} Hazard(s)`}
+                                    </span>
                                 </div>
                             </div>
                         </div>
@@ -542,8 +591,8 @@ function MapDashboard() {
 
                     {routes && (
                         <>
-                            {/* Inactive Alternative Route (Muted dashed line, clickable to switch) */}
-                            {activeRoute === 'safest_route' && routes.fastest_route && (
+                            {/* Inactive Alternative Route: rendered ONLY when the routes are distinct */}
+                            {!routes.is_same_route && activeRoute === 'safest_route' && routes.fastest_route && (
                                 <Polyline 
                                     positions={routes.fastest_route.path} 
                                     color="#94a3b8" 
@@ -553,7 +602,7 @@ function MapDashboard() {
                                     eventHandlers={{ click: () => setActiveRoute('fastest_route') }}
                                 />
                             )}
-                            {activeRoute === 'fastest_route' && routes.safest_route && (
+                            {!routes.is_same_route && activeRoute === 'fastest_route' && routes.safest_route && (
                                 <Polyline 
                                     positions={routes.safest_route.path} 
                                     color="#94a3b8" 

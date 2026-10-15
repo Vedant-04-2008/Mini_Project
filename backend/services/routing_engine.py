@@ -6,11 +6,21 @@ from extensions import db
 
 OSRM_BASE_URL = "http://router.project-osrm.org/route/v1/driving"
 
+POSITIVE_TYPES = {
+    'well_lit', 'safe_area', 'heritage spot', 'green park', 
+    'well-maintained road', 'clean zone', 'safe zone', 'smooth traffic', 'police_presence'
+}
+
+MODERATE_TYPES = {
+    'crowded zone', 'needs minor repair', 'average road', 'moderate traffic', 'busy market', 'no_sidewalk'
+}
+
 def get_optimal_routes(start_lat, start_lng, end_lat, end_lng):
     """
-    Fetches multiple distinct alternative routes from OSRM by injecting proportional waypoints,
-    decodes their polylines, and overlays MySQL Spatial Hazard Data (spatial_hazards)
-    to strictly separate the direct Fastest route from an alternative Safest route.
+    Fetches candidate routes from OSRM, evaluates spatial hazards along each corridor from MySQL,
+    and returns:
+      - If fastest route has 0 hazards (or no alternative is safer): safest and fastest routes converge.
+      - If fastest route has hazards and a detour avoids them: provides distinct safest & fastest paths.
     """
     mid_lat = (start_lat + end_lat) / 2
     mid_lng = (start_lng + end_lng) / 2
@@ -68,16 +78,19 @@ def get_optimal_routes(start_lat, start_lng, end_lat, end_lng):
         # Decode the OSRM Polyline into [(lat, lng), ...]
         coords = polyline.decode(encoded_poly)
         
-        # Convert to WKT LineString for MySQL ST_Distance spatial query
-        wkt_coords = ", ".join([f"{lon} {lat}" for lat, lon in coords])
-        linestring_wkt = f"LINESTRING({wkt_coords})"
+        # Deduplicate consecutive identical vertices
+        deduped = []
+        for pt in coords:
+            if not deduped or deduped[-1] != pt:
+                deduped.append(pt)
+        if len(deduped) < 2:
+            deduped = coords
         
-        POSITIVE_TYPES = {
-            'well_lit', 'safe_area', 'heritage spot', 'green park', 
-            'well-maintained road', 'clean zone', 'safe zone', 'smooth traffic', 'police_presence'
-        }
+        # Convert to WKT LineString for MySQL ST_Distance spatial query (SRID 4326: POINT(lon lat))
+        wkt_coords = ", ".join([f"{lon} {lat}" for lat, lon in deduped])
+        linestring_wkt = f"LINESTRING({wkt_coords})"
 
-        # Spatial Database Query (SRID 4326)
+        # Query database hazards within 50 meters of this route corridor
         query = text("""
             SELECT hazard_type, severity_score 
             FROM spatial_hazards 
@@ -90,29 +103,33 @@ def get_optimal_routes(start_lat, start_lng, end_lat, end_lng):
             print(f"[SPATIAL QUERY WARNING] {db_err}")
             hazards = []
         
-        # Calculate penalty only for actual hazards; positive spots provide safety bonuses
+        # Classify spots into positive, minor cautions, and genuine hazards
         penalty_seconds = 0
         actual_hazards_count = 0
+        positive_spots_count = 0
         
         for h in hazards:
             htype = (h[0] or '').strip().lower()
             score = float(h[1]) if h[1] is not None else 1.0
             
             if htype in POSITIVE_TYPES:
-                # Safe zone bonus: reduce penalty
-                penalty_seconds = max(0, penalty_seconds - 30)
+                positive_spots_count += 1
+                penalty_seconds = max(0, penalty_seconds - 30) # Safety bonus
+            elif htype in MODERATE_TYPES and score <= 2.0:
+                # Mild caution (e.g., average road, mild market traffic)
+                penalty_seconds += 20
             else:
+                # Genuine hazard (pothole, construction, flooding, accident, poor lighting, etc.)
                 actual_hazards_count += 1
                 if score <= 1.8:
-                    penalty_seconds += 60   # Minor caution -> +1 min penalty
+                    penalty_seconds += 60   # Minor hazard -> +1 min penalty
                 elif score <= 3.2:
-                    penalty_seconds += 180  # Moderate caution -> +3 min penalty
+                    penalty_seconds += 180  # Moderate hazard -> +3 min penalty
                 else:
-                    penalty_seconds += 300  # High danger -> +5 min penalty
+                    penalty_seconds += 300  # High hazard -> +5 min penalty
                 
         total_cost = duration + penalty_seconds
         
-        # Formatted duration string
         mins = max(1, round(duration / 60))
         dist_km = round(distance / 1000, 1)
         
@@ -125,6 +142,7 @@ def get_optimal_routes(start_lat, start_lng, end_lat, end_lng):
             "penalty_sec": penalty_seconds,
             "total_cost": total_cost,
             "hazards_encountered": actual_hazards_count,
+            "positive_count": positive_spots_count,
             "time": f"{mins} mins",
             "distance_str": f"{dist_km} km"
         }
@@ -133,44 +151,59 @@ def get_optimal_routes(start_lat, start_lng, end_lat, end_lng):
     if not processed_routes:
         return {}
 
-    # 1. Identify the direct Fastest Route (strictly the lowest base duration)
+    # 1. Identify the direct Fastest Route (strictly lowest driving duration)
     fastest_route = min(processed_routes, key=lambda x: x['duration_sec'])
     
-    # 2. Identify distinct Alternative Routes
-    alternatives = [r for r in processed_routes if r['geometry'] != fastest_route['geometry']]
-    
-    if alternatives:
-        # Prioritize the alternative with the fewest hazards; if tied, lowest total cost
-        safest_route = min(alternatives, key=lambda x: (x['hazards_encountered'], x['total_cost']))
-        
-        hazard_diff = fastest_route['hazards_encountered'] - safest_route['hazards_encountered']
-        if hazard_diff > 0:
-            safe_desc = f"Safer detour. Bypasses {hazard_diff} reported hazard(s) along the direct path."
-        elif safest_route['hazards_encountered'] == 0:
-            safe_desc = "Zero hazards detected. Well-lit alternative perimeter route."
-        else:
-            safe_desc = f"Alternative arterial corridor. Passes {safest_route['hazards_encountered']} hazard(s) in proximity."
-            
-        fast_desc = f"Direct route via shortest street distance. Passes {fastest_route['hazards_encountered']} hazard(s)."
-    else:
-        # Fallback if only 1 route could possibly be generated
+    # 2. Determine Safest Route according to real database hazard data:
+    # Rule A: If fastest route already has 0 hazards, it is ALREADY 100% safe!
+    #         Detouring is completely unnecessary and counterproductive.
+    if fastest_route['hazards_encountered'] == 0:
         safest_route = fastest_route
-        safe_desc = "Primary route. No alternative detours available for this endpoint."
-        fast_desc = "Direct route via shortest street distance."
+        is_same_route = True
+        safe_desc = "Optimal corridor verified safe. 0 reported hazards detected along the direct path."
+        fast_desc = "Direct route via shortest street distance (0 hazards detected)."
+    else:
+        # Rule B: Fastest route has hazards. Look for an alternative that is STRICTLY SAFER.
+        alternatives = [r for r in processed_routes if r['geometry'] != fastest_route['geometry']]
+        
+        # Candidates must have strictly fewer hazards than the fastest route
+        safer_alternatives = [r for r in alternatives if r['hazards_encountered'] < fastest_route['hazards_encountered']]
+        
+        if safer_alternatives:
+            # Pick the alternative with lowest hazard count (lowest total_cost as tie-breaker)
+            safest_route = min(safer_alternatives, key=lambda x: (x['hazards_encountered'], x['total_cost']))
+            is_same_route = False
+            
+            hazard_diff = fastest_route['hazards_encountered'] - safest_route['hazards_encountered']
+            if safest_route['hazards_encountered'] == 0:
+                safe_desc = f"Safer detour. Bypasses all {hazard_diff} reported hazard(s) on direct path (0 hazards on this route)."
+            else:
+                safe_desc = f"Safer detour. Bypasses {hazard_diff} reported hazard(s) along the direct path."
+                
+            fast_desc = f"Direct route via shortest street distance. Passes {fastest_route['hazards_encountered']} hazard(s)."
+        else:
+            # No alternative is safer (detours have equal or more hazards)
+            safest_route = fastest_route
+            is_same_route = True
+            safe_desc = f"Direct route is the optimal safety path. Passes {fastest_route['hazards_encountered']} minor caution spot(s) with no safer detours available."
+            fast_desc = f"Direct route via shortest street distance. Passes {fastest_route['hazards_encountered']} hazard(s)."
 
     return {
+        "is_same_route": is_same_route,
         "safest_route": {
             "description": safe_desc,
             "time": safest_route['time'],
             "distance": safest_route['distance_str'],
             "path": safest_route['path'],
-            "hazard_count": safest_route['hazards_encountered']
+            "hazard_count": safest_route['hazards_encountered'],
+            "positive_count": safest_route['positive_count']
         },
         "fastest_route": {
             "description": fast_desc,
             "time": fastest_route['time'],
             "distance": fastest_route['distance_str'],
             "path": fastest_route['path'],
-            "hazard_count": fastest_route['hazards_encountered']
+            "hazard_count": fastest_route['hazards_encountered'],
+            "positive_count": fastest_route['positive_count']
         }
     }

@@ -34,6 +34,7 @@ def report_civic():
 def get_routes():
     # Provide a simple mocked route path near Kolhapur coordinates
     return jsonify({
+        "is_same_route": False,
         "safest_route": {
             "description": "Mocked Safest Route. Avoids known hazard zones.",
             "time": "18 mins",
