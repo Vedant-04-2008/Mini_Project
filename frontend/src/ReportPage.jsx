@@ -42,6 +42,7 @@ function ReportPage() {
     const [description, setDescription] = useState('');
     const [position, setPosition] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isLocating, setIsLocating] = useState(false);
     const [error, setError] = useState(null);
 
     // KMC Success Receipt Modal State
@@ -53,14 +54,44 @@ function ReportPage() {
     };
 
     const handleCurrentLocation = () => {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                (pos) => setPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-                (err) => setError("Could not get location. Please enable location services.")
-            );
-        } else {
-            setError("Geolocation is not supported by your browser.");
+        if (!navigator.geolocation) {
+            setError("Geolocation is not supported by your browser or environment.");
+            return;
         }
+
+        setIsLocating(true);
+        setError(null);
+
+        const onGeoSuccess = (pos) => {
+            setPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+            setIsLocating(false);
+        };
+
+        const onGeoError = (err) => {
+            console.warn("High accuracy geolocation failed, retrying with network fallback:", err);
+            navigator.geolocation.getCurrentPosition(
+                onGeoSuccess,
+                (finalErr) => {
+                    setIsLocating(false);
+                    if (finalErr.code === 1) {
+                        setError("Location permission denied. Please allow location permissions in your browser settings.");
+                    } else if (finalErr.code === 2) {
+                        setError("GPS signal unavailable. Please ensure your device location is turned on.");
+                    } else if (finalErr.code === 3) {
+                        setError("Location request timed out. Please try again.");
+                    } else {
+                        setError("Could not retrieve GPS location. Please click on the map to place the incident pin.");
+                    }
+                },
+                { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 }
+            );
+        };
+
+        navigator.geolocation.getCurrentPosition(
+            onGeoSuccess,
+            onGeoError,
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 15000 }
+        );
     };
 
     const handleSubmit = async (e) => {
@@ -209,14 +240,28 @@ function ReportPage() {
                                     <button 
                                         type="button" 
                                         onClick={handleCurrentLocation} 
+                                        disabled={isLocating}
                                         style={{ 
-                                            backgroundColor: '#334155', border: 'none', color: '#f8fafc', 
-                                            padding: '0.75rem', borderRadius: '8px', flex: '0 0 auto', 
-                                            cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center'
+                                            backgroundColor: isLocating ? '#0d9488' : '#334155', 
+                                            border: isLocating ? '1px solid #14b8a6' : '1px solid #475569', 
+                                            color: '#f8fafc', padding: '0.75rem', borderRadius: '8px', flex: '0 0 auto', 
+                                            cursor: isLocating ? 'wait' : 'pointer', 
+                                            display: 'flex', justifyContent: 'center', alignItems: 'center',
+                                            transition: 'all 0.2s',
+                                            boxShadow: isLocating ? '0 0 10px rgba(20, 184, 166, 0.4)' : 'none'
                                         }}
-                                        title="Use Current Location"
+                                        title={isLocating ? "Acquiring GPS coordinates..." : "Use Current Location"}
                                     >
-                                        <span className="material-symbols-outlined" style={{ fontSize: '1.25rem' }}>my_location</span>
+                                        <span 
+                                            className="material-symbols-outlined" 
+                                            style={{ 
+                                                fontSize: '1.25rem',
+                                                animation: isLocating ? 'spin 1s linear infinite' : 'none',
+                                                color: isLocating ? '#ffffff' : '#38bdf8'
+                                            }}
+                                        >
+                                            {isLocating ? 'sync' : 'my_location'}
+                                        </span>
                                     </button>
                                     <select 
                                         onChange={handleStandardLocationChange} 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapContainer, TileLayer, Polyline, Popup, useMap, CircleMarker, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, Popup, useMap, CircleMarker, useMapEvents, Circle } from 'react-leaflet';
 import { api } from './services/api';
 import { useStore } from './store/useStore';
 import { socket } from './services/socket';
@@ -37,6 +37,9 @@ function MapDashboard() {
     const [startLoc, setStartLoc] = useState({ name: 'CBS (Central Bus Stand)', lat: 16.7032, lng: 74.2432 });
     const [endLoc, setEndLoc] = useState({ name: 'Rankala Lake', lat: 16.6915, lng: 74.2155 });
     const [isCalculating, setIsCalculating] = useState(false);
+    const [isLocating, setIsLocating] = useState(false);
+    const [flyToTarget, setFlyToTarget] = useState(null);
+    const [isOutsideKolhapur, setIsOutsideKolhapur] = useState(false);
     const [error, setError] = useState(null);
     const [showKMCModal, setShowKMCModal] = useState(false);
     const [kmcTickets, setKmcTickets] = useState([]);
@@ -80,14 +83,91 @@ function MapDashboard() {
     }, []);
 
     const handleCurrentLocation = () => {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                (pos) => setStartLoc({ name: "Current Location", lat: pos.coords.latitude, lng: pos.coords.longitude }),
-                (err) => setError("Could not get location. Please enable location services.")
-            );
-        } else {
-            setError("Geolocation is not supported by your browser.");
+        if (!navigator.geolocation) {
+            setError("Geolocation is not supported by your browser or environment.");
+            return;
         }
+
+        setIsLocating(true);
+        setError(null);
+
+        const geoOptions = {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 15000
+        };
+
+        const onGeoSuccess = async (pos) => {
+            const { latitude, longitude, accuracy } = pos.coords;
+            
+            // Check approximate distance from Kolhapur CBS (16.7032, 74.2432)
+            const dLat = (latitude - 16.7032) * 111;
+            const dLng = (longitude - 74.2432) * 111 * Math.cos(16.7032 * Math.PI / 180);
+            const distKm = Math.sqrt(dLat * dLat + dLng * dLng);
+            const outside = distKm > 35;
+            setIsOutsideKolhapur(outside);
+
+            let locName = `Current Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`;
+            let detectedCity = '';
+
+            // Reverse geocode via OpenStreetMap Nominatim for clean human-readable street/area name
+            try {
+                const res = await fetch(
+                    `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
+                );
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.address) {
+                        const area = data.address.suburb || data.address.neighbourhood || data.address.residential || data.address.road;
+                        const city = data.address.city || data.address.town || data.address.village || data.address.county || 'Kolhapur';
+                        detectedCity = city;
+                        if (area) {
+                            locName = `${area}, ${city}`;
+                        } else if (data.display_name) {
+                            locName = data.display_name.split(',').slice(0, 2).join(',').trim();
+                        }
+                    }
+                }
+            } catch (revErr) {
+                console.log("Reverse geocode fallback to coordinates:", revErr);
+            }
+
+            setStartLoc({
+                name: locName,
+                lat: latitude,
+                lng: longitude,
+                accuracy: Math.round(accuracy || 30),
+                city: detectedCity,
+                isCurrent: true
+            });
+
+            // Smoothly fly map to user's location
+            setFlyToTarget([latitude, longitude, 15, Date.now()]);
+            setIsLocating(false);
+        };
+
+        const onGeoError = (err) => {
+            console.warn("High accuracy geolocation failed or timed out:", err);
+            // Fallback: try once with enableHighAccuracy: false (network IP fallback)
+            navigator.geolocation.getCurrentPosition(
+                (pos) => onGeoSuccess(pos),
+                (finalErr) => {
+                    setIsLocating(false);
+                    if (finalErr.code === 1) {
+                        setError("Location permission denied. Please allow location access in your browser settings (lock icon in address bar).");
+                    } else if (finalErr.code === 2) {
+                        setError("GPS signal unavailable. Please ensure your device location is turned on.");
+                    } else if (finalErr.code === 3) {
+                        setError("Location request timed out. Please check your connection and try again.");
+                    } else {
+                        setError("Could not retrieve GPS location. Please select a starting point from the list.");
+                    }
+                },
+                { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 }
+            );
+        };
+
+        navigator.geolocation.getCurrentPosition(onGeoSuccess, onGeoError, geoOptions);
     };
 
     const handleCalculateRoute = () => {
@@ -207,6 +287,16 @@ function MapDashboard() {
         navigate('/');
     };
 
+    const MapFlyTo = ({ target }) => {
+        const map = useMap();
+        useEffect(() => {
+            if (target && target[0] && target[1]) {
+                map.flyTo([target[0], target[1]], target[2] || 15, { duration: 1.2 });
+            }
+        }, [target, map]);
+        return null;
+    };
+
     const MapBounds = ({ path }) => {
         const map = useMap();
         useEffect(() => {
@@ -219,11 +309,25 @@ function MapDashboard() {
 
     const DestinationSelector = () => {
         useMapEvents({
-            click(e) {
-                setEndLoc({ name: "Dropped Pin", lat: e.latlng.lat, lng: e.latlng.lng });
+            async click(e) {
+                const { lat, lng } = e.latlng;
+                let pinName = `Dropped Pin (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+                try {
+                    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data && data.address) {
+                            const area = data.address.suburb || data.address.neighbourhood || data.address.road;
+                            const city = data.address.city || data.address.town || 'Kolhapur';
+                            if (area) pinName = `${area}, ${city}`;
+                            else if (data.display_name) pinName = data.display_name.split(',').slice(0, 2).join(',').trim();
+                        }
+                    }
+                } catch (_) {}
+                setEndLoc({ name: pinName, lat, lng });
             }
         });
-        return endLoc.lat ? <CircleMarker center={[endLoc.lat, endLoc.lng]} radius={6} pathOptions={{ color: '#0d9488', fillColor: '#0d9488', fillOpacity: 1 }} /> : null;
+        return null;
     };
 
     const POSITIVE_TYPES = new Set([
@@ -417,30 +521,92 @@ function MapDashboard() {
                     <div style={{ marginBottom: '2rem', backgroundColor: '#1e293b', border: '1px solid #334155', padding: '1.5rem', borderRadius: '12px' }}>
                         <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '1.25rem' }}>Find Safe Route</div>
                         
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-                            <div style={{ width: '12px', height: '12px', backgroundColor: 'transparent', border: '2px solid #94a3b8', borderRadius: '50%', flexShrink: 0 }}></div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                            <div style={{ width: '12px', height: '12px', backgroundColor: 'transparent', border: '2px solid #38bdf8', borderRadius: '50%', flexShrink: 0 }}></div>
                             <AddressAutocomplete 
                                 placeholder="Search starting point..."
                                 value={startLoc.name}
-                                onSelect={(loc) => setStartLoc(loc)}
+                                onSelect={(loc) => {
+                                    setStartLoc(loc);
+                                    setIsOutsideKolhapur(false);
+                                    if (loc.lat && loc.lng) setFlyToTarget([loc.lat, loc.lng, 15, Date.now()]);
+                                }}
                             />
                             <button 
                                 onClick={handleCurrentLocation}
-                                style={{ backgroundColor: '#334155', border: 'none', color: '#f8fafc', padding: '0.75rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                                title="Use Current Location"
+                                disabled={isLocating}
+                                style={{ 
+                                    backgroundColor: isLocating ? '#0d9488' : '#334155', 
+                                    border: isLocating ? '1px solid #14b8a6' : '1px solid #475569', 
+                                    color: '#f8fafc', padding: '0.75rem', borderRadius: '6px', 
+                                    cursor: isLocating ? 'wait' : 'pointer', 
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                                    transition: 'all 0.2s',
+                                    boxShadow: isLocating ? '0 0 12px rgba(20, 184, 166, 0.4)' : 'none'
+                                }}
+                                title={isLocating ? "Acquiring high-accuracy GPS fix..." : "Use Current Location (GPS)"}
                             >
-                                <span className="material-symbols-outlined" style={{ fontSize: '1.2rem' }}>my_location</span>
+                                <span 
+                                    className="material-symbols-outlined" 
+                                    style={{ 
+                                        fontSize: '1.2rem',
+                                        animation: isLocating ? 'spin 1s linear infinite' : 'none',
+                                        color: isLocating ? '#ffffff' : '#38bdf8'
+                                    }}
+                                >
+                                    {isLocating ? 'sync' : 'my_location'}
+                                </span>
                             </button>
                         </div>
 
-                        <div style={{ width: '2px', height: '15px', backgroundColor: '#334155', marginLeft: '5px', marginBottom: '1rem' }}></div>
+                        {/* Location status badge when acquiring */}
+                        {isLocating && (
+                            <div style={{ fontSize: '0.75rem', color: '#2dd4bf', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                <span className="material-symbols-outlined" style={{ fontSize: '0.9rem', animation: 'spin 1s linear infinite' }}>sync</span>
+                                Acquiring precise GPS coordinates...
+                            </div>
+                        )}
+
+                        {/* Outside Kolhapur Advisory Banner */}
+                        {isOutsideKolhapur && (
+                            <div style={{
+                                backgroundColor: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.35)',
+                                borderRadius: '8px', padding: '0.65rem 0.85rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: '#fbbf24'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600 }}>
+                                    <span className="material-symbols-outlined" style={{ fontSize: '1rem' }}>info</span>
+                                    Location Detected Outside Kolhapur
+                                </div>
+                                <div style={{ fontSize: '0.74rem', color: '#cbd5e1', marginTop: '3px', lineHeight: 1.4 }}>
+                                    Device GPS indicates you may be outside Kolhapur city bounds. For local safety routing:
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        setStartLoc({ name: "CBS (Central Bus Stand)", lat: 16.7032, lng: 74.2432 });
+                                        setFlyToTarget([16.7032, 74.2432, 15, Date.now()]);
+                                        setIsOutsideKolhapur(false);
+                                    }}
+                                    style={{
+                                        marginTop: '0.45rem', backgroundColor: '#f59e0b', color: '#0f172a', border: 'none',
+                                        padding: '4px 10px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer'
+                                    }}
+                                >
+                                    Snap to Kolhapur CBS (Recommended)
+                                </button>
+                            </div>
+                        )}
+
+                        <div style={{ width: '2px', height: '15px', backgroundColor: '#334155', marginLeft: '5px', marginBottom: '0.75rem' }}></div>
                         
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
                             <div style={{ width: '12px', height: '12px', backgroundColor: '#0d9488', borderRadius: '50%', flexShrink: 0 }}></div>
                             <AddressAutocomplete 
                                 placeholder="Search destination or drop a pin..."
                                 value={endLoc.name}
-                                onSelect={(loc) => setEndLoc(loc)}
+                                onSelect={(loc) => {
+                                    setEndLoc(loc);
+                                    if (loc.lat && loc.lng) setFlyToTarget([loc.lat, loc.lng, 15, Date.now()]);
+                                }}
                             />
                         </div>
 
@@ -556,10 +722,63 @@ function MapDashboard() {
                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                     />
                     
+                    <MapFlyTo target={flyToTarget} />
                     <DestinationSelector />
 
-                    {startLoc.lat && startLoc.name === "Current Location" && (
-                        <CircleMarker center={[startLoc.lat, startLoc.lng]} radius={6} pathOptions={{ color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 1 }} />
+                    {/* Start / Current Location Marker with Radar Pulse Ring */}
+                    {startLoc.lat && (
+                        <>
+                            <Circle 
+                                center={[startLoc.lat, startLoc.lng]} 
+                                radius={startLoc.accuracy ? Math.min(Math.max(startLoc.accuracy, 25), 150) : 40} 
+                                pathOptions={{ color: '#38bdf8', fillColor: '#38bdf8', fillOpacity: 0.18, weight: 1.5, dashArray: '4, 4' }} 
+                            />
+                            <CircleMarker 
+                                center={[startLoc.lat, startLoc.lng]} 
+                                radius={8} 
+                                pathOptions={{ color: '#ffffff', fillColor: '#0284c7', fillOpacity: 1, weight: 3 }}
+                            >
+                                <Popup>
+                                    <div style={{ color: '#0f172a', padding: '3px', minWidth: '160px' }}>
+                                        <div style={{ fontWeight: 700, color: '#0284c7', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <span className="material-symbols-outlined" style={{ fontSize: '1.1rem' }}>my_location</span>
+                                            {startLoc.isCurrent ? 'Current Location (GPS)' : 'Starting Point'}
+                                        </div>
+                                        <div style={{ fontSize: '0.82rem', color: '#1e293b', marginTop: '3px', fontWeight: 600 }}>
+                                            {startLoc.name}
+                                        </div>
+                                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
+                                            GPS: {startLoc.lat.toFixed(5)}, {startLoc.lng.toFixed(5)}
+                                            {startLoc.accuracy && ` (±${startLoc.accuracy}m)`}
+                                        </div>
+                                    </div>
+                                </Popup>
+                            </CircleMarker>
+                        </>
+                    )}
+
+                    {/* Destination Marker */}
+                    {endLoc.lat && (
+                        <CircleMarker 
+                            center={[endLoc.lat, endLoc.lng]} 
+                            radius={8} 
+                            pathOptions={{ color: '#ffffff', fillColor: '#0d9488', fillOpacity: 1, weight: 3 }}
+                        >
+                            <Popup>
+                                <div style={{ color: '#0f172a', padding: '3px', minWidth: '150px' }}>
+                                    <div style={{ fontWeight: 700, color: '#0d9488', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        <span className="material-symbols-outlined" style={{ fontSize: '1.1rem' }}>flag</span>
+                                        Destination
+                                    </div>
+                                    <div style={{ fontSize: '0.82rem', color: '#1e293b', marginTop: '3px', fontWeight: 600 }}>
+                                        {endLoc.name}
+                                    </div>
+                                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
+                                        GPS: {endLoc.lat.toFixed(5)}, {endLoc.lng.toFixed(5)}
+                                    </div>
+                                </div>
+                            </Popup>
+                        </CircleMarker>
                     )}
 
                     {hazards.map(hazard => {
