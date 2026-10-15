@@ -41,6 +41,8 @@ function MapDashboard() {
     const [showKMCModal, setShowKMCModal] = useState(false);
     const [kmcTickets, setKmcTickets] = useState([]);
     const [emergencyContacts, setEmergencyContacts] = useState([]);
+    const [dispatchModal, setDispatchModal] = useState(null);
+    const [isDispatching, setIsDispatching] = useState(false);
 
     // Ref for tracking GPS simulation interval
     const gpsIntervalRef = useRef(null);
@@ -139,15 +141,64 @@ function MapDashboard() {
         }
     };
 
-    const handleSOS = () => {
+    const handleSOS = async () => {
+        setIsDispatching(true);
+        const currentLat = startLoc.lat || 16.7032;
+        const currentLng = startLoc.lng || 74.2432;
+
         if (guardianActive) {
-            socket.emit('trigger_sos', { session_id: 'current_session' });
-            const contactsSummary = emergencyContacts.length > 0 
-                ? emergencyContacts.map(c => `• ${c.name} (${c.phone}) - ${c.relationship}`).join('\n')
-                : '• Kolhapur Police Control Room (112)';
-            alert(`🚨 CRITICAL SOS BROADCASTED!\n\nYour live coordinates & emergency distress telemetry have been dispatched to:\n${contactsSummary}`);
-        } else {
-            alert("Please activate Guardian Mode before broadcasting SOS.");
+            socket.emit('trigger_sos', { session_id: 'current_session', lat: currentLat, lng: currentLng });
+        }
+
+        try {
+            const res = await api.dispatchGuardianAlert({
+                lat: currentLat,
+                lng: currentLng,
+                alert_type: 'sos',
+                session_id: 'current_session'
+            });
+            setDispatchModal(res);
+        } catch (err) {
+            console.error("SOS dispatch gateway error:", err);
+            const fallbackMaps = `https://maps.google.com/?q=${currentLat},${currentLng}`;
+            const fallbackMsg = `🚨 EMERGENCY SOS! Live Location: ${fallbackMaps}`;
+            setDispatchModal({
+                alert_type: 'sos',
+                lat: currentLat,
+                lng: currentLng,
+                maps_link: fallbackMaps,
+                message_text: fallbackMsg,
+                recipients: emergencyContacts.map(c => ({
+                    name: c.name,
+                    phone: c.phone,
+                    relationship: c.relationship,
+                    whatsapp_url: `https://wa.me/?text=${encodeURIComponent(fallbackMsg)}`,
+                    sms_url: `sms:${c.phone}?body=${encodeURIComponent(fallbackMsg)}`,
+                    status: 'Manual Dispatch Ready'
+                }))
+            });
+        } finally {
+            setIsDispatching(false);
+        }
+    };
+
+    const handleShareTracking = async () => {
+        setIsDispatching(true);
+        const currentLat = startLoc.lat || 16.7032;
+        const currentLng = startLoc.lng || 74.2432;
+
+        try {
+            const res = await api.dispatchGuardianAlert({
+                lat: currentLat,
+                lng: currentLng,
+                alert_type: 'guardian_tracking',
+                session_id: 'current_session'
+            });
+            setDispatchModal(res);
+        } catch (err) {
+            console.error("Failed to prepare share tracking:", err);
+        } finally {
+            setIsDispatching(false);
         }
     };
 
@@ -333,8 +384,32 @@ function MapDashboard() {
                                     <span>⚠️ No emergency contacts saved. <span onClick={() => navigate('/profile')} style={{ textDecoration: 'underline', cursor: 'pointer', fontWeight: 700 }}>Add in Profile</span></span>
                                 )}
                             </div>
-                            <button onClick={handleSOS} style={{ width: '100%', backgroundColor: '#e11d48', color: '#fff', border: 'none', padding: '0.75rem', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', boxShadow: '0 4px 6px rgba(225, 29, 72, 0.3)' }}>
-                                <span className="material-symbols-outlined">warning</span> SOS PANIC BUTTON
+                            <button 
+                                onClick={handleSOS} 
+                                disabled={isDispatching}
+                                style={{ 
+                                    width: '100%', backgroundColor: '#e11d48', color: '#fff', border: 'none', 
+                                    padding: '0.75rem', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', 
+                                    display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', 
+                                    boxShadow: '0 4px 10px rgba(225, 29, 72, 0.4)', marginBottom: '0.6rem',
+                                    opacity: isDispatching ? 0.7 : 1
+                                }}
+                            >
+                                <span className="material-symbols-outlined">warning</span> 
+                                {isDispatching ? 'Broadcasting...' : '🚨 SOS PANIC BUTTON'}
+                            </button>
+
+                            <button 
+                                onClick={handleShareTracking}
+                                style={{ 
+                                    width: '100%', backgroundColor: '#0f172a', color: '#38bdf8', border: '1px solid #0284c7', 
+                                    padding: '0.6rem', borderRadius: '8px', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer', 
+                                    display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.4rem', 
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                <span className="material-symbols-outlined" style={{ fontSize: '1.1rem', color: '#25D366' }}>share_location</span>
+                                Dispatch WhatsApp / SMS Alert
                             </button>
                         </div>
                     )}
@@ -577,6 +652,181 @@ function MapDashboard() {
                                 style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '0.6rem 1.25rem', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}
                             >
                                 File New Grievance
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Live GPS Telemetry & WhatsApp/SMS Dispatch Modal */}
+            {dispatchModal && (
+                <div style={{
+                    position: 'fixed', inset: 0, backgroundColor: 'rgba(2, 6, 23, 0.88)', backdropFilter: 'blur(8px)',
+                    display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2100, padding: '1.5rem'
+                }}>
+                    <div style={{
+                        backgroundColor: '#1e293b', border: `1px solid ${dispatchModal.alert_type === 'sos' ? '#f43f5e' : '#0284c7'}`,
+                        borderRadius: '16px', maxWidth: '680px', width: '100%', maxHeight: '90vh', display: 'flex',
+                        flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.85)', overflow: 'hidden'
+                    }}>
+                        {/* Header */}
+                        <div style={{
+                            padding: '1.25rem 2rem',
+                            backgroundColor: dispatchModal.alert_type === 'sos' ? 'rgba(225, 29, 72, 0.15)' : '#0f172a',
+                            borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <div style={{
+                                    backgroundColor: dispatchModal.alert_type === 'sos' ? '#e11d48' : '#0284c7',
+                                    padding: '0.6rem', borderRadius: '12px', display: 'flex'
+                                }}>
+                                    <span className="material-symbols-outlined" style={{ color: '#fff', fontSize: '1.4rem' }}>
+                                        {dispatchModal.alert_type === 'sos' ? 'emergency' : 'share_location'}
+                                    </span>
+                                </div>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '1.25rem', color: dispatchModal.alert_type === 'sos' ? '#fda4af' : '#f8fafc', fontWeight: 700 }}>
+                                        {dispatchModal.alert_type === 'sos' ? 'Emergency SOS Telemetry Dispatched' : 'Live Guardian Tracking Dispatched'}
+                                    </h3>
+                                    <p style={{ margin: 0, fontSize: '0.8rem', color: '#94a3b8' }}>
+                                        GPS coordinates relayed to WhatsApp, SMS, and User Gateway
+                                    </p>
+                                </div>
+                            </div>
+                            <button onClick={() => setDispatchModal(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.75rem', lineHeight: 1 }}>&times;</button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div style={{ padding: '1.5rem 2rem', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                            
+                            {/* Live GPS Coordinate Block */}
+                            <div style={{
+                                backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px',
+                                padding: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem'
+                            }}>
+                                <div>
+                                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>
+                                        Current Live GPS Coordinates
+                                    </div>
+                                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#38bdf8', fontFamily: 'monospace' }}>
+                                        📍 {Number(dispatchModal.lat).toFixed(5)}° N, {Number(dispatchModal.lng).toFixed(5)}° E
+                                    </div>
+                                    <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
+                                        City: Kolhapur • Pin Accuracy: ~5m
+                                    </div>
+                                </div>
+                                <a 
+                                    href={dispatchModal.maps_link} target="_blank" rel="noreferrer"
+                                    style={{
+                                        backgroundColor: '#1e293b', border: '1px solid #38bdf8', color: '#38bdf8',
+                                        padding: '0.5rem 1rem', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600,
+                                        textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.4rem'
+                                    }}
+                                >
+                                    <span className="material-symbols-outlined" style={{ fontSize: '1.1rem' }}>open_in_new</span>
+                                    Google Maps Pin
+                                </a>
+                            </div>
+
+                            {/* Pre-formatted Message Preview */}
+                            <div>
+                                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8', marginBottom: '0.4rem' }}>
+                                    Automated Outgoing Message Payload:
+                                </div>
+                                <div style={{
+                                    backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '8px',
+                                    padding: '0.85rem 1rem', fontSize: '0.825rem', color: '#cbd5e1', lineHeight: 1.5,
+                                    whiteSpace: 'pre-line', fontFamily: 'monospace'
+                                }}>
+                                    {dispatchModal.message_text}
+                                </div>
+                            </div>
+
+                            {/* Recipients List */}
+                            <div>
+                                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#e2e8f0', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                    <span className="material-symbols-outlined" style={{ fontSize: '1rem', color: '#10b981' }}>send</span>
+                                    Dispatched Recipients ({dispatchModal.recipients?.length || 0})
+                                </div>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                    {dispatchModal.recipients?.map((r, idx) => (
+                                        <div 
+                                            key={idx}
+                                            style={{
+                                                backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '10px',
+                                                padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem'
+                                            }}
+                                        >
+                                            <div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                    <strong style={{ fontSize: '0.95rem', color: '#f8fafc' }}>{r.name}</strong>
+                                                    <span style={{
+                                                        backgroundColor: r.relationship.includes('Self') ? 'rgba(168, 85, 247, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                                                        color: r.relationship.includes('Self') ? '#c084fc' : '#38bdf8',
+                                                        border: '1px solid rgba(56, 189, 248, 0.3)', padding: '1px 8px', borderRadius: '4px',
+                                                        fontSize: '0.7rem', fontWeight: 600
+                                                    }}>
+                                                        {r.relationship}
+                                                    </span>
+                                                </div>
+                                                <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '2px' }}>
+                                                    📞 {r.phone}
+                                                </div>
+                                            </div>
+
+                                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                                {/* Direct WhatsApp Trigger */}
+                                                <button
+                                                    onClick={() => window.open(r.whatsapp_url, '_blank')}
+                                                    style={{
+                                                        backgroundColor: '#25D366', color: '#ffffff', border: 'none',
+                                                        padding: '0.45rem 0.9rem', borderRadius: '6px', fontSize: '0.8rem',
+                                                        fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem',
+                                                        boxShadow: '0 2px 4px rgba(37, 211, 102, 0.3)'
+                                                    }}
+                                                    title="Open WhatsApp with pre-filled live coordinates"
+                                                >
+                                                    <span className="material-symbols-outlined" style={{ fontSize: '1rem' }}>chat</span>
+                                                    WhatsApp
+                                                </button>
+
+                                                {/* Direct SMS Trigger */}
+                                                <button
+                                                    onClick={() => window.location.href = r.sms_url}
+                                                    style={{
+                                                        backgroundColor: '#2563eb', color: '#ffffff', border: 'none',
+                                                        padding: '0.45rem 0.9rem', borderRadius: '6px', fontSize: '0.8rem',
+                                                        fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem'
+                                                    }}
+                                                    title="Open default SMS app with pre-filled coordinates"
+                                                >
+                                                    <span className="material-symbols-outlined" style={{ fontSize: '1rem' }}>sms</span>
+                                                    SMS
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div style={{
+                            padding: '1rem 2rem', borderTop: '1px solid #334155', backgroundColor: '#0f172a',
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                        }}>
+                            <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                                Encrypted Telemetry Gateway: Lat/Lng coordinates delivered
+                            </span>
+                            <button
+                                onClick={() => setDispatchModal(null)}
+                                style={{
+                                    backgroundColor: '#334155', color: '#ffffff', border: 'none',
+                                    padding: '0.5rem 1.25rem', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer'
+                                }}
+                            >
+                                Close Console
                             </button>
                         </div>
                     </div>

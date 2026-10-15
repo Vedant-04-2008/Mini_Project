@@ -134,6 +134,15 @@ export const api = {
             headers: getHeaders()
         });
         return handleResponse(res);
+    },
+
+    dispatchGuardianAlert: async (payload) => {
+        const res = await fetch('/api/guardian/dispatch-alert', {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        return handleResponse(res);
     }
 };
 
